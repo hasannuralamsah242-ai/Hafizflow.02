@@ -1,0 +1,1567 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HafizFlow - Personal Muraja'ah & Spaced Repetition Assistant</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                        arabic: ['Amiri', 'Scheherazade New', 'serif']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        .app-shell { visibility: hidden; }
+        .app-shell.initialized { visibility: visible; }
+        .font-arabic { font-family: 'Amiri', 'Scheherazade New', serif; line-height: 2.3; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #10b981; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #059669; }
+        .blur-text { filter: blur(8px); user-select: none; }
+    </style>
+
+    <script>
+        const QARI_LIST = [
+            { id: '01', name: 'Abdullah Al-Juhany', displayName: 'Abdullah Al-Juhany' },
+            { id: '02', name: 'Abdul Muhsin Al-Qasim', displayName: 'Abdul Muhsin Al-Qasim' },
+            { id: '03', name: 'Abdurrahman As-Sudais', displayName: 'Abdurrahman As-Sudais' },
+            { id: '04', name: 'Ibrahim Al-Dossari', displayName: 'Ibrahim Al-Dossari' },
+            { id: '05', name: 'Mishary Rashid Al-Afasy', displayName: 'Mishary Rashid Al-Afasy' }
+        ];
+
+        const SURAH_AYAH_COUNTS = [
+            7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128, 111, 110, 98, 135,
+            112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73, 54, 45, 83, 182, 88, 75, 85,
+            54, 53, 89, 59, 37, 35, 38, 29, 18, 45, 60, 49, 62, 55, 78, 96, 29, 22, 24, 13,
+            14, 11, 11, 18, 12, 12, 30, 52, 52, 44, 28, 28, 20, 56, 40, 31, 50, 40, 46, 42,
+            29, 19, 36, 25, 22, 17, 19, 26, 30, 20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11,
+            11, 8, 3, 9, 5, 4, 7, 3, 6, 3, 5, 4, 5, 6
+        ];
+
+        const FALLBACK_SURAHS = [
+            { nomor: 1, nama: "الفاتحة", namaLatin: "Al-Fatihah", jumlahAyat: 7, tempatTurun: "Mekah", arti: "Pembukaan" },
+            { nomor: 2, nama: "البقرة", namaLatin: "Al-Baqarah", jumlahAyat: 286, tempatTurun: "Madinah", arti: "Sapi Betina" },
+            { nomor: 3, nama: "آل عمران", namaLatin: "Ali 'Imran", jumlahAyat: 200, tempatTurun: "Madinah", arti: "Keluarga 'Imran" },
+            { nomor: 4, nama: "النساء", namaLatin: "An-Nisa'", jumlahAyat: 176, tempatTurun: "Madinah", arti: "Wanita" },
+            { nomor: 36, nama: "يس", namaLatin: "Yasin", jumlahAyat: 83, tempatTurun: "Mekah", arti: "Ya Sin" },
+            { nomor: 67, nama: "الملك", namaLatin: "Al-Mulk", jumlahAyat: 30, tempatTurun: "Mekah", arti: "Kerajaan" },
+            { nomor: 112, nama: "الإخلاص", namaLatin: "Al-Ikhlas", jumlahAyat: 4, tempatTurun: "Mekah", arti: "Memurnikan Keesaan Allah" },
+            { nomor: 113, nama: "الفلق", namaLatin: "Al-Falaq", jumlahAyat: 5, tempatTurun: "Mekah", arti: "Waktu Subuh" },
+            { nomor: 114, nama: "الناس", namaLatin: "An-Nas", jumlahAyat: 6, tempatTurun: "Mekah", arti: "Manusia" }
+        ];
+
+        function hafizApp() {
+            return {
+                // Application View State
+                currentView: 'loading',
+                isAppInitialized: false,
+                sidebarOpen: false,
+                darkMode: false,
+                demoMode: false,
+                showResetModal: false,
+                
+                // User & Settings State
+                userState: {
+                    isInitialized: false,
+                    isOnboarded: false,
+                    user: null
+                },
+                settings: {
+                    arabicFontSize: 28,
+                    showLatin: true,
+                    showTranslation: true
+                },
+
+                // Onboarding Form Model
+                onboardingStep: 1,
+                onboardingData: {
+                    name: '',
+                    university: '',
+                    dailyTarget: 5,
+                    murajaahTarget: 10,
+                    reminderTime: '05:00',
+                    selectedQari: '05',
+                    memorizationStatus: 'new',
+                    startSurahNo: 1,
+                    startAyahNo: 1
+                },
+
+                // Quran Data State
+                surahs: [],
+                loadingSurahs: true,
+                loadingDetail: false,
+                currentSurah: null,
+                searchQuery: '',
+                filterType: 'all',
+                lastRead: null,
+                bookmarks: [],
+
+                // Hafalan State
+                memorizationPos: null,
+                dailyTarget: 5,
+                wahdahRepeatCount: 20,
+                wahdahCurrentCount: 0,
+                isBlindMode: false,
+                isRevealed: false,
+                
+                // Active SRS Sessions
+                sessionActive: false,
+                sessionType: 'sabaq', // 'sabaq', 'sabqi', 'manzil'
+                sessionSurah: null,
+                sessionAyah: null,
+                sessionAyahData: null,
+                sessionQueue: [],
+                sessionIndex: 0,
+
+                // Multi-Qari & Audio State
+                qariList: QARI_LIST,
+                selectedQariId: '05',
+                audioElement: new Audio(),
+                audioState: {
+                    src: '',
+                    title: '',
+                    subtitle: '',
+                    isPlaying: false,
+                    repeatTarget: 1,
+                    repeatCounter: 1,
+                    autoNext: true
+                },
+
+                // Progress Metrics
+                streakDays: 0,
+                lastActiveDate: '',
+                memorizedList: [],
+                reviewSchedules: [],
+                
+                // Toast
+                toast: { show: false, message: '' },
+
+                async init() {
+                    // Load dark mode preference
+                    if (localStorage.getItem('hf_dark') === 'true' || window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                        this.darkMode = true;
+                        document.documentElement.classList.add('dark');
+                    }
+
+                    // Load user settings if saved
+                    const savedSettings = localStorage.getItem('hf_settings');
+                    if (savedSettings) {
+                        try {
+                            this.settings = { ...this.settings, ...JSON.parse(savedSettings) };
+                        } catch (e) {
+                            console.error('Settings parse error:', e);
+                        }
+                    }
+
+                    // Resolve route & load user data
+                    await this.resolveInitialRoute();
+                    this.fetchSurahs();
+
+                    // Audio listener
+                    this.audioElement.addEventListener('ended', () => this.handleAudioEnded());
+
+                    // Watchers for Lucide icon re-renders
+                    this.$watch('currentView', () => this.refreshIcons());
+                    this.$watch('onboardingStep', () => this.refreshIcons());
+                    this.$watch('loadingDetail', () => this.refreshIcons());
+                    this.$watch('sessionActive', () => this.refreshIcons());
+                    this.$watch('isRevealed', () => this.refreshIcons());
+                    this.$watch('sidebarOpen', () => this.refreshIcons());
+                    
+                    this.isAppInitialized = true;
+                    this.refreshIcons();
+                },
+
+                async resolveInitialRoute() {
+                    const onboardingCompleted = localStorage.getItem('hf_onboarding_completed') === 'true';
+                    const savedUser = localStorage.getItem('hf_user');
+                    if (!onboardingCompleted || !savedUser) {
+                        this.userState.isOnboarded = false;
+                        this.userState.isInitialized = false;
+                        this.currentView = 'welcome';
+                    } else {
+                        this.userState.isOnboarded = true;
+                        this.userState.isInitialized = true;
+                        this.userState.user = JSON.parse(savedUser);
+                        this.loadLocalData();
+                        this.currentView = 'dashboard';
+                    }
+                },
+
+                refreshIcons() {
+                    this.$nextTick(() => {
+                        if (window.lucide) {
+                            window.lucide.createIcons();
+                        }
+                    });
+                },
+
+                loadLocalData() {
+                    try {
+                        const savedBookmarks = localStorage.getItem('hf_bookmarks');
+                        if (savedBookmarks) this.bookmarks = JSON.parse(savedBookmarks);
+                        const savedLastRead = localStorage.getItem('hf_last_read');
+                        if (savedLastRead) this.lastRead = JSON.parse(savedLastRead);
+                        const savedMemPos = localStorage.getItem('hf_mem_pos');
+                        if (savedMemPos) this.memorizationPos = JSON.parse(savedMemPos);
+                        const savedMemList = localStorage.getItem('hf_mem_list');
+                        if (savedMemList) this.memorizedList = JSON.parse(savedMemList);
+                        const savedSchedules = localStorage.getItem('hf_schedules');
+                        if (savedSchedules) this.reviewSchedules = JSON.parse(savedSchedules);
+                        const savedStreak = localStorage.getItem('hf_streak');
+                        if (savedStreak) this.streakDays = parseInt(savedStreak);
+                        const savedLastDate = localStorage.getItem('hf_last_date');
+                        if (savedLastDate) {
+                            this.lastActiveDate = savedLastDate;
+                            this.checkStreakStatus();
+                        }
+                    } catch (e) {
+                        console.error('Error reading localStorage:', e);
+                    }
+                },
+
+                startOnboarding() {
+                    this.onboardingStep = 1;
+                    this.currentView = 'onboarding';
+                },
+
+                nextOnboardingStep() {
+                    if (this.onboardingStep === 1) {
+                        if (!this.onboardingData.name.trim()) {
+                            this.showToast('Silakan masukkan nama Anda.');
+                            return;
+                        }
+                    }
+                    if (this.onboardingStep < 5) {
+                        this.onboardingStep++;
+                    } else {
+                        this.completeOnboarding();
+                    }
+                },
+
+                prevOnboardingStep() {
+                    if (this.onboardingStep > 1) {
+                        this.onboardingStep--;
+                    }
+                },
+
+                completeOnboarding() {
+                    let startPos = { surahNo: 1, ayahNo: 1 };
+                    if (this.onboardingData.memorizationStatus === 'existing') {
+                        const sNo = parseInt(this.onboardingData.startSurahNo) || 1;
+                        const aNo = parseInt(this.onboardingData.startAyahNo) || 1;
+                        const maxAyah = SURAH_AYAH_COUNTS[sNo - 1] || 7;
+                        
+                        if (aNo > maxAyah) {
+                            this.showToast(`Surah ke-${sNo} hanya memiliki ${maxAyah} ayat.`);
+                            return;
+                        }
+                        
+                        const nextPos = this.getNextAyahPos(sNo, aNo);
+                        startPos = { surahNo: nextPos.surahNo, ayahNo: nextPos.ayahNo };
+                    }
+
+                    const newUserObj = {
+                        name: this.onboardingData.name.trim(),
+                        university: this.onboardingData.university.trim(),
+                        createdAt: new Date().toISOString()
+                    };
+
+                    this.userState.user = newUserObj;
+                    this.userState.isOnboarded = true;
+                    this.userState.isInitialized = true;
+                    this.dailyTarget = this.onboardingData.dailyTarget;
+                    this.selectedQariId = this.onboardingData.selectedQari;
+                    this.memorizationPos = startPos;
+                    
+                    this.streakDays = 0;
+                    this.memorizedList = [];
+                    this.reviewSchedules = [];
+                    this.bookmarks = [];
+
+                    localStorage.setItem('hf_user', JSON.stringify(newUserObj));
+                    localStorage.setItem('hf_onboarding_completed', 'true');
+                    localStorage.setItem('hf_mem_pos', JSON.stringify(this.memorizationPos));
+                    localStorage.setItem('hf_streak', '0');
+                    localStorage.setItem('hf_mem_list', JSON.stringify([]));
+                    localStorage.setItem('hf_bookmarks', JSON.stringify([]));
+                    this.saveSettings();
+
+                    this.showToast('Selamat datang! Akun hafalan Anda telah disiapkan.');
+                    this.currentView = 'dashboard';
+                },
+
+                saveUserObject() {
+                    if (this.userState.user) {
+                        localStorage.setItem('hf_user', JSON.stringify(this.userState.user));
+                    }
+                },
+
+                saveSettings() {
+                    localStorage.setItem('hf_settings', JSON.stringify(this.settings));
+                },
+
+                checkStreakStatus() {
+                    const today = new Date().toISOString().split('T')[0];
+                    if (this.lastActiveDate) {
+                        const last = new Date(this.lastActiveDate);
+                        const curr = new Date(today);
+                        const diffDays = Math.floor((curr - last) / (1000 * 60 * 60 * 24));
+                        if (diffDays > 1) {
+                            this.streakDays = 0;
+                            localStorage.setItem('hf_streak', '0');
+                        }
+                    }
+                },
+
+                updateStreak() {
+                    const today = new Date().toISOString().split('T')[0];
+                    if (this.lastActiveDate !== today) {
+                        if (this.lastActiveDate) {
+                            const last = new Date(this.lastActiveDate);
+                            const curr = new Date(today);
+                            const diffDays = Math.floor((curr - last) / (1000 * 60 * 60 * 24));
+                            if (diffDays === 1) {
+                                this.streakDays += 1;
+                            } else if (diffDays > 1) {
+                                this.streakDays = 1;
+                            }
+                        } else {
+                            this.streakDays = 1;
+                        }
+                        this.lastActiveDate = today;
+                        localStorage.setItem('hf_streak', this.streakDays.toString());
+                        localStorage.setItem('hf_last_date', today);
+                    }
+                },
+
+                toggleDarkMode() {
+                    this.darkMode = !this.darkMode;
+                    if (this.darkMode) {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('hf_dark', 'true');
+                    } else {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('hf_dark', 'false');
+                    }
+                },
+
+                async fetchSurahs() {
+                    try {
+                        this.loadingSurahs = true;
+                        const res = await fetch('https://equran.id/api/v2/surat');
+                        if (!res.ok) throw new Error('API Error');
+                        const data = await res.json();
+                        if (data.code === 200) {
+                            this.surahs = data.data;
+                        } else {
+                            throw new Error('Invalid Data');
+                        }
+                    } catch (err) {
+                        this.surahs = FALLBACK_SURAHS;
+                    } finally {
+                        this.loadingSurahs = false;
+                        this.refreshIcons();
+                    }
+                },
+
+                get filteredSurahs() {
+                    return this.surahs.filter(s => {
+                        const matchesSearch = s.namaLatin.toLowerCase().includes(this.searchQuery.toLowerCase()) || 
+                                              s.nomor.toString() === this.searchQuery.trim();
+                        const matchesType = this.filterType === 'all' || s.tempatTurun === this.filterType;
+                        return matchesSearch && matchesType;
+                    });
+                },
+
+                async openSurah(surahNo, jumpAyahNo = null) {
+                    if (surahNo < 1 || surahNo > 114) return;
+                    this.currentView = 'surahDetail';
+                    this.loadingDetail = true;
+                    this.sidebarOpen = false;
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    try {
+                        const res = await fetch(`https://equran.id/api/v2/surat/${surahNo}`);
+                        if (!res.ok) throw new Error('API Error');
+                        const data = await res.json();
+                        if (data.code === 200) {
+                            this.currentSurah = data.data;
+                            this.lastRead = {
+                                surahNo: data.data.nomor,
+                                surahName: data.data.namaLatin,
+                                ayahNo: jumpAyahNo || 1
+                            };
+                            localStorage.setItem('hf_last_read', JSON.stringify(this.lastRead));
+                            if (jumpAyahNo) {
+                                setTimeout(() => {
+                                    const el = document.getElementById(`ayat-${jumpAyahNo}`);
+                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }, 300);
+                            }
+                        }
+                    } catch (err) {
+                        this.showToast('Gagal memuat isi surah.');
+                    } finally {
+                        this.loadingDetail = false;
+                        this.refreshIcons();
+                    }
+                },
+
+                getNextAyahPos(sNo, aNo) {
+                    const maxAyah = SURAH_AYAH_COUNTS[sNo - 1] || 7;
+                    if (aNo < maxAyah) {
+                        return { surahNo: sNo, ayahNo: aNo + 1, completed: false };
+                    } else {
+                        if (sNo < 114) {
+                            return { surahNo: sNo + 1, ayahNo: 1, completed: false };
+                        } else {
+                            return { surahNo: 114, ayahNo: 6, completed: true };
+                        }
+                    }
+                },
+
+                async startSabaqSession() {
+                    if (!this.memorizationPos) {
+                        this.memorizationPos = { surahNo: 1, ayahNo: 1 };
+                    }
+                    this.sessionType = 'sabaq';
+                    this.sessionActive = true;
+                    this.wahdahCurrentCount = 0;
+                    this.isBlindMode = false;
+                    this.isRevealed = false;
+                    this.currentView = 'sabaq';
+                    this.sidebarOpen = false;
+                    await this.loadSessionAyahData(this.memorizationPos.surahNo, this.memorizationPos.ayahNo);
+                },
+
+                async loadSessionAyahData(surahNo, ayahNo) {
+                    this.loadingDetail = true;
+                    try {
+                        const res = await fetch(`https://equran.id/api/v2/surat/${surahNo}`);
+                        if (!res.ok) throw new Error('API Error');
+                        const data = await res.json();
+                        if (data.code === 200) {
+                            this.sessionSurah = data.data;
+                            this.sessionAyah = ayahNo;
+                            this.sessionAyahData = data.data.ayat.find(a => a.nomorAyat === ayahNo);
+                        }
+                    } catch (err) {
+                        this.sessionSurah = { nomor: surahNo, namaLatin: "Al-Fatihah", nama: "الفاتحة" };
+                        this.sessionAyah = ayahNo;
+                        this.sessionAyahData = {
+                            nomorAyat: ayahNo,
+                            teksArab: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+                            teksLatin: "Bismillāhir-raḥmānir-raḥīm(i).",
+                            teksIndonesia: "Dengan nama Allah Yang Maha Pengasih lagi Maha Penyayang."
+                        };
+                    } finally {
+                        this.loadingDetail = false;
+                        this.refreshIcons();
+                    }
+                },
+
+                incrementWahdah() {
+                    this.wahdahCurrentCount++;
+                    if (this.wahdahCurrentCount >= this.wahdahRepeatCount) {
+                        this.showToast('Target Wahdah tercapai! Lanjutkan evaluasi.');
+                    }
+                },
+
+                submitSrsRating(difficulty) {
+                    if (!this.sessionSurah || !this.sessionAyahData) return;
+                    const sNo = this.sessionSurah.nomor;
+                    const aNo = this.sessionAyah;
+                    let intervalDays = 1;
+                    if (difficulty === 'hard') intervalDays = 1;
+                    else if (difficulty === 'medium') intervalDays = 3;
+                    else if (difficulty === 'easy') intervalDays = 7;
+
+                    const nextDate = new Date();
+                    nextDate.setDate(nextDate.getDate() + intervalDays);
+
+                    const existingIdx = this.memorizedList.findIndex(m => m.surahNo === sNo && m.ayahNo === aNo);
+                    const memObj = {
+                        surahNo: sNo,
+                        ayahNo: aNo,
+                        surahName: this.sessionSurah.namaLatin,
+                        status: 'memorized',
+                        lastReviewed: new Date().toISOString(),
+                        nextReview: nextDate.toISOString(),
+                        difficulty: difficulty
+                    };
+
+                    if (existingIdx >= 0) {
+                        this.memorizedList[existingIdx] = memObj;
+                    } else {
+                        this.memorizedList.push(memObj);
+                    }
+
+                    localStorage.setItem('hf_mem_list', JSON.stringify(this.memorizedList));
+                    this.updateStreak();
+
+                    if (this.sessionType === 'sabaq') {
+                        this.showToast(`Hafalan tersimpan! Dijiwai ulang dalam ${intervalDays} hari.`);
+                        const nextPos = this.getNextAyahPos(sNo, aNo);
+                        if (nextPos.completed) {
+                            this.showToast('MasyaAllah! Anda telah menyelesaikan seluruh 114 Surah!');
+                            this.currentView = 'dashboard';
+                            this.sessionActive = false;
+                        } else {
+                            this.memorizationPos = { surahNo: nextPos.surahNo, ayahNo: nextPos.ayahNo };
+                            localStorage.setItem('hf_mem_pos', JSON.stringify(this.memorizationPos));
+                            this.wahdahCurrentCount = 0;
+                            this.isBlindMode = false;
+                            this.isRevealed = false;
+                            this.loadSessionAyahData(nextPos.surahNo, nextPos.ayahNo);
+                        }
+                    } else {
+                        // Sabqi & Manzil multi-item Queue Navigation
+                        this.sessionIndex++;
+                        if (this.sessionIndex < this.sessionQueue.length) {
+                            const nextItem = this.sessionQueue[this.sessionIndex];
+                            this.isBlindMode = false;
+                            this.isRevealed = false;
+                            this.loadSessionAyahData(nextItem.surahNo, nextItem.ayahNo);
+                            this.showToast(`Evaluasi tersimpan. Lanjut ke ayat ${this.sessionIndex + 1} dari ${this.sessionQueue.length}`);
+                        } else {
+                            this.showToast('Sesi Muraja\'ah Selesai! Bararakallahu fiik.');
+                            this.currentView = 'dashboard';
+                            this.sessionActive = false;
+                        }
+                    }
+                },
+
+                startSabqiSession() {
+                    const sabqiItems = this.memorizedList.slice(-15);
+                    if (sabqiItems.length === 0) {
+                        this.showToast('Belum ada materi hafalan. Tambahkan hafalan baru di Sabaq terlebih dahulu!');
+                        return;
+                    }
+                    this.sessionType = 'sabqi';
+                    this.sessionQueue = sabqiItems;
+                    this.sessionIndex = 0;
+                    this.sessionActive = true;
+                    this.currentView = 'sabqi';
+                    this.sidebarOpen = false;
+                    this.loadSessionAyahData(sabqiItems[0].surahNo, sabqiItems[0].ayahNo);
+                },
+
+                startManzilSession() {
+                    if (this.memorizedList.length === 0) {
+                        this.showToast('Belum ada materi hafalan. Mulai hafalan pertama Anda di Sabaq!');
+                        return;
+                    }
+                    this.sessionType = 'manzil';
+                    this.sessionQueue = [...this.memorizedList].sort(() => 0.5 - Math.random()).slice(0, 10);
+                    this.sessionIndex = 0;
+                    this.sessionActive = true;
+                    this.currentView = 'manzil';
+                    this.sidebarOpen = false;
+                    this.loadSessionAyahData(this.sessionQueue[0].surahNo, this.sessionQueue[0].ayahNo);
+                },
+
+                toggleBookmark(surah, ayat) {
+                    const idx = this.bookmarks.findIndex(b => b.surahNo === surah.nomor && b.ayahNo === ayat.nomorAyat);
+                    if (idx >= 0) {
+                        this.bookmarks.splice(idx, 1);
+                        this.showToast('Bookmark dihapus.');
+                    } else {
+                        this.bookmarks.push({
+                            surahNo: surah.nomor,
+                            surahName: surah.namaLatin,
+                            ayahNo: ayat.nomorAyat,
+                            teksArab: ayat.teksArab,
+                            teksIndonesia: ayat.teksIndonesia
+                        });
+                        this.showToast('Ayat berhasil ditandai!');
+                    }
+                    localStorage.setItem('hf_bookmarks', JSON.stringify(this.bookmarks));
+                },
+
+                isBookmarked(surahNo, ayahNo) {
+                    return this.bookmarks.some(b => b.surahNo === surahNo && b.ayahNo === ayahNo);
+                },
+
+                removeBookmark(index) {
+                    this.bookmarks.splice(index, 1);
+                    localStorage.setItem('hf_bookmarks', JSON.stringify(this.bookmarks));
+                    this.showToast('Bookmark dihapus.');
+                },
+
+                copyAyahText(ayat, surah) {
+                    const text = `${surah.namaLatin} Ayat ${ayat.nomorAyat}\n${ayat.teksArab}\n"${ayat.teksIndonesia}"`;
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        this.showToast('Ayat berhasil disalin!');
+                    } catch (err) {
+                        this.showToast('Gagal menyalin ayat.');
+                    }
+                    document.body.removeChild(textArea);
+                },
+
+                playAyahAudio(ayat, surah, qariIdOverride = null) {
+                    if (!ayat || !ayat.audio) return;
+                    const qId = qariIdOverride || this.selectedQariId;
+                    const audioUrl = ayat.audio[qId] || Object.values(ayat.audio)[0];
+                    if (!audioUrl) return;
+                    const qariObj = this.qariList.find(q => q.id === qId);
+                    this.audioElement.src = audioUrl;
+                    this.audioElement.play().catch(e => {
+                        this.showToast('Gagal memutar audio.');
+                    });
+                    
+                    this.audioState = {
+                        src: audioUrl,
+                        title: `Surah ${surah.namaLatin} : Ayat ${ayat.nomorAyat}`,
+                        subtitle: `Qari: ${qariObj ? qariObj.displayName : 'Mishary Rashid'}`,
+                        isPlaying: true,
+                        repeatTarget: this.audioState.repeatTarget,
+                        repeatCounter: 1,
+                        autoNext: true
+                    };
+                    this.refreshIcons();
+                },
+
+                playFullSurahAudio(surah) {
+                    if (!surah || !surah.audioFull) return;
+                    const qId = this.selectedQariId;
+                    const audioUrl = surah.audioFull[qId] || Object.values(surah.audioFull)[0];
+                    if (!audioUrl) return;
+                    const qariObj = this.qariList.find(q => q.id === qId);
+                    this.audioElement.src = audioUrl;
+                    this.audioElement.play().catch(e => {
+                        this.showToast('Gagal memutar audio surah.');
+                    });
+                    this.audioState = {
+                        src: audioUrl,
+                        title: `Surah ${surah.namaLatin} (Full Surah)`,
+                        subtitle: `Qari: ${qariObj ? qariObj.displayName : 'Mishary Rashid'}`,
+                        isPlaying: true,
+                        repeatTarget: 1,
+                        repeatCounter: 1,
+                        autoNext: false
+                    };
+                    this.refreshIcons();
+                },
+
+                handleAudioEnded() {
+                    if (this.audioState.repeatCounter < this.audioState.repeatTarget) {
+                        this.audioState.repeatCounter++;
+                        this.audioElement.currentTime = 0;
+                        this.audioElement.play();
+                    } else {
+                        this.audioState.isPlaying = false;
+                    }
+                },
+
+                toggleAudioPlay() {
+                    if (this.audioElement.paused) {
+                        this.audioElement.play();
+                        this.audioState.isPlaying = true;
+                    } else {
+                        this.audioElement.pause();
+                        this.audioState.isPlaying = false;
+                    }
+                    this.refreshIcons();
+                },
+
+                stopAudio() {
+                    this.audioElement.pause();
+                    this.audioElement.currentTime = 0;
+                    this.audioState.src = '';
+                    this.audioState.isPlaying = false;
+                },
+
+                confirmResetData() {
+                    this.showResetModal = true;
+                },
+
+                executeResetData() {
+                    localStorage.removeItem('hf_user');
+                    localStorage.removeItem('hf_onboarding_completed');
+                    localStorage.removeItem('hf_mem_pos');
+                    localStorage.removeItem('hf_streak');
+                    localStorage.removeItem('hf_mem_list');
+                    localStorage.removeItem('hf_bookmarks');
+                    localStorage.removeItem('hf_last_read');
+                    localStorage.removeItem('hf_last_date');
+                    localStorage.removeItem('hf_settings');
+
+                    this.showResetModal = false;
+                    this.userState.isOnboarded = false;
+                    this.userState.isInitialized = false;
+                    this.userState.user = null;
+                    
+                    this.streakDays = 0;
+                    this.memorizedList = [];
+                    this.bookmarks = [];
+                    this.memorizationPos = null;
+                    this.showToast('Seluruh data berhasil dihapus.');
+                    this.currentView = 'welcome';
+                },
+
+                showToast(msg) {
+                    this.toast.message = msg;
+                    this.toast.show = true;
+                    setTimeout(() => { this.toast.show = false; }, 3200);
+                }
+            };
+        }
+    </script>
+    
+    <!-- Alpine.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js" defer></script>
+</head>
+
+<body x-data="hafizApp()" :class="isAppInitialized ? 'app-shell initialized' : 'app-shell'" class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-full flex flex-col font-sans transition-colors duration-200">
+    
+    <!-- WELCOME / LANDING SCREEN -->
+    <template x-if="currentView === 'welcome'">
+        <div class="min-h-screen flex flex-col justify-center items-center px-4 py-12 bg-gradient-to-b from-slate-900 via-emerald-950 to-slate-950 text-white text-center">
+            <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-xl shadow-emerald-500/30 mb-6">
+                <i data-lucide="sparkles" class="w-8 h-8"></i>
+            </div>
+            
+            <span class="px-4 py-1.5 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 rounded-full text-xs font-semibold uppercase tracking-widest mb-4">
+                Personal Muraja'ah Assistant
+            </span>
+            <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight mb-4">
+                HafizFlow
+            </h1>
+            <p class="max-w-md text-slate-300 text-sm sm:text-base leading-relaxed mb-8">
+                Bantu tingkatkan dan jaga hafalan Al-Qur'an Anda dengan metode teruji <strong>Sabaq, Sabqi, Manzil</strong> dan <strong>Adaptive Spaced Repetition System (SRS)</strong>.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-4 w-full max-w-xs sm:max-w-sm">
+                <button @click="startOnboarding()" class="w-full py-3.5 px-6 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl shadow-lg shadow-emerald-500/25 transition">
+                    Mulai Hafalan
+                </button>
+            </div>
+            <p class="text-xs text-slate-500 mt-12">
+                HafizFlow • Kemenag RI Certified Data
+            </p>
+        </div>
+    </template>
+
+    <!-- ONBOARDING MODAL / SCREEN -->
+    <template x-if="currentView === 'onboarding'">
+        <div class="min-h-screen flex flex-col justify-center items-center px-4 py-8 bg-slate-100 dark:bg-slate-950">
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full space-y-6">
+                
+                <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <span class="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest" x-text="'Langkah ' + onboardingStep + ' dari 5'"></span>
+                    <button @click="currentView = 'welcome'" class="text-xs text-slate-400 hover:underline">Batal</button>
+                </div>
+
+                <!-- STEP 1: Nama User & Nama Universitas/Instansi -->
+                <div x-show="onboardingStep === 1" class="space-y-4">
+                    <h3 class="text-xl font-bold">Informasi Pengguna</h3>
+                    <p class="text-xs text-slate-500">Nama dan universitas/instansi akan ditampilkan di profil personal Anda.</p>
+                    
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nama Lengkap <span class="text-rose-500">*</span></label>
+                            <input type="text" x-model="onboardingData.name" placeholder="Ketik nama Anda di sini..." class="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Nama Universitas / Instansi</label>
+                            <input type="text" x-model="onboardingData.university" placeholder="Contoh: Universitas Brawijaya / Universitas Indonesia" class="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STEP 2: Target Sabaq Harian -->
+                <div x-show="onboardingStep === 2" class="space-y-4">
+                    <h3 class="text-xl font-bold">Target Sabaq Harian (Hafalan Baru)</h3>
+                    <p class="text-xs text-slate-500">Berapa banyak ayat baru yang ingin dihafalkan setiap hari?</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <template x-for="t in [3, 5, 10, 15]" :key="t">
+                            <button @click="onboardingData.dailyTarget = t" :class="onboardingData.dailyTarget === t ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'" class="py-3 rounded-xl text-sm transition">
+                                <span x-text="t + ' Ayat / Hari'"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- STEP 3: Target Muraja'ah Harian -->
+                <div x-show="onboardingStep === 3" class="space-y-4">
+                    <h3 class="text-xl font-bold">Target Muraja'ah Harian</h3>
+                    <p class="text-xs text-slate-500">Berapa banyak pengulangan muraja'ah (Sabqi & Manzil) setiap hari?</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <template x-for="m in [5, 10, 20, 30]" :key="m">
+                            <button @click="onboardingData.murajaahTarget = m" :class="onboardingData.murajaahTarget === m ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700'" class="py-3 rounded-xl text-sm transition">
+                                <span x-text="m + ' Ayat'"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- STEP 4: Pilih Qari -->
+                <div x-show="onboardingStep === 4" class="space-y-4">
+                    <h3 class="text-xl font-bold">Pilih Qari Favorit</h3>
+                    <p class="text-xs text-slate-500">Audio murattal dari Qari terverifikasi Kemenag API.</p>
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                        <template x-for="q in qariList" :key="q.id">
+                            <div @click="onboardingData.selectedQari = q.id" :class="onboardingData.selectedQari === q.id ? 'bg-emerald-50 dark:bg-emerald-950 border-emerald-500' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700'" class="p-3 border rounded-xl cursor-pointer flex items-center justify-between">
+                                <span class="text-xs font-semibold" x-text="q.name"></span>
+                                <i data-lucide="check-circle" x-show="onboardingData.selectedQari === q.id" class="w-4 h-4 text-emerald-600"></i>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- STEP 5: Posisi Hafalan Saat Ini -->
+                <div x-show="onboardingStep === 5" class="space-y-4">
+                    <h3 class="text-xl font-bold">Kondisi Hafalan Anda Saat Ini</h3>
+                    <div class="space-y-3">
+                        <label @click="onboardingData.memorizationStatus = 'new'" :class="onboardingData.memorizationStatus === 'new' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950' : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800'" class="p-4 border rounded-xl cursor-pointer block">
+                            <span class="font-bold text-sm block">Saya Baru Mulai</span>
+                            <span class="text-xs text-slate-500">Mulai dari Al-Fatihah ayat 1.</span>
+                        </label>
+                        <label @click="onboardingData.memorizationStatus = 'existing'" :class="onboardingData.memorizationStatus === 'existing' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950' : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800'" class="p-4 border rounded-xl cursor-pointer block">
+                            <span class="font-bold text-sm block">Saya Sudah Memiliki Hafalan</span>
+                            <span class="text-xs text-slate-500">Sertakan posisi surah dan ayat terakhir yang dihafal.</span>
+                        </label>
+                    </div>
+                    <div x-show="onboardingData.memorizationStatus === 'existing'" class="grid grid-cols-2 gap-3 pt-2">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 block mb-1">Nomor Surah (1-114)</label>
+                            <input type="number" min="1" max="114" x-model.number="onboardingData.startSurahNo" class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-400 block mb-1">Ayat Terakhir Dihafal</label>
+                            <input type="number" min="1" x-model.number="onboardingData.startAyahNo" class="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button @click="prevOnboardingStep()" x-show="onboardingStep > 1" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800">
+                        Kembali
+                    </button>
+                    <div></div>
+                    <button @click="nextOnboardingStep()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition">
+                        <span x-text="onboardingStep === 5 ? 'Selesaikan Setup' : 'Lanjutkan'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- MAIN APP SHELL -->
+    <template x-if="!['welcome', 'onboarding', 'loading'].includes(currentView)">
+        <div class="min-h-screen flex flex-col">
+            
+            <!-- DESKTOP SIDEBAR -->
+            <aside class="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 z-40 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 shadow-sm">
+                <div class="flex flex-col flex-grow pt-5 pb-4 overflow-y-auto justify-between">
+                    <div class="px-5">
+                        <div class="flex items-center gap-3 cursor-pointer" @click="currentView = 'dashboard'">
+                            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-700 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-600/30">
+                                <i data-lucide="sparkles" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h1 class="text-lg font-bold bg-gradient-to-r from-emerald-700 to-teal-600 dark:from-emerald-400 dark:to-teal-300 bg-clip-text text-transparent leading-tight">
+                                    HafizFlow
+                                </h1>
+                                <p class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Muraja'ah SRS Assistant</p>
+                            </div>
+                        </div>
+
+                        <!-- Streak Status Badge -->
+                        <div class="mt-6 p-3 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/60 rounded-2xl flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold">
+                                    <i data-lucide="flame" class="w-4 h-4 fill-current"></i>
+                                </div>
+                                <div>
+                                    <span class="text-xs font-bold text-slate-900 dark:text-slate-100 block" x-text="streakDays + ' Hari Streak'"></span>
+                                    <span class="text-[10px] text-slate-500 dark:text-slate-400">Istiqamah Harian</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Navigation List -->
+                        <nav class="mt-6 space-y-1">
+                            <button @click="currentView = 'dashboard'" :class="currentView === 'dashboard' ? 'bg-emerald-600 text-white font-semibold shadow-md shadow-emerald-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition">
+                                <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard
+                            </button>
+                            <button @click="currentView = 'quran'" :class="currentView === 'quran' || currentView === 'surahDetail' ? 'bg-emerald-600 text-white font-semibold shadow-md shadow-emerald-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition">
+                                <i data-lucide="book-open" class="w-4 h-4"></i> Baca Al-Qur'an
+                            </button>
+                            <div class="pt-3 pb-1">
+                                <p class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">3 Pilar Hafalan</p>
+                            </div>
+                            <button @click="startSabaqSession()" :class="currentView === 'sabaq' ? 'bg-emerald-600 text-white font-semibold shadow-md shadow-emerald-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm transition">
+                                <span class="flex items-center gap-3">
+                                    <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-500"></i> Sabaq (Baru)
+                                </span>
+                                <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold" x-text="memorizationPos ? 'QS ' + memorizationPos.surahNo + ':' + memorizationPos.ayahNo : 'Mulai'"></span>
+                            </button>
+                            <button @click="startSabqiSession()" :class="currentView === 'sabqi' ? 'bg-emerald-600 text-white font-semibold shadow-md shadow-emerald-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition">
+                                <i data-lucide="rotate-ccw" class="w-4 h-4 text-amber-500"></i> Sabqi (Dekat)
+                            </button>
+                            <button @click="startManzilSession()" :class="currentView === 'manzil' ? 'bg-emerald-600 text-white font-semibold shadow-md shadow-emerald-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition">
+                                <i data-lucide="calendar" class="w-4 h-4 text-teal-500"></i> Manzil (Jauh)
+                            </button>
+                            <div class="pt-3 pb-1">
+                                <p class="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Statistik & Fitur</p>
+                            </div>
+                            <button @click="currentView = 'analytics'" :class="currentView === 'analytics' ? 'bg-emerald-600 text-white font-semibold shadow-md shadow-emerald-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition">
+                                <i data-lucide="bar-chart-2" class="w-4 h-4"></i> Analitik 30 Juz
+                            </button>
+                            <button @click="currentView = 'bookmarks'" :class="currentView === 'bookmarks' ? 'bg-emerald-600 text-white font-semibold shadow-md shadow-emerald-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm transition">
+                                <span class="flex items-center gap-3">
+                                    <i data-lucide="bookmark" class="w-4 h-4"></i> Bookmark
+                                </span>
+                                <span x-show="bookmarks.length > 0" class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold" x-text="bookmarks.length"></span>
+                            </button>
+                            <button @click="currentView = 'profile'" :class="currentView === 'profile' ? 'bg-emerald-600 text-white font-semibold shadow-md shadow-emerald-600/20' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition">
+                                <i data-lucide="user" class="w-4 h-4"></i> Profil & Pengaturan
+                            </button>
+                        </nav>
+                    </div>
+                    <div class="p-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                        <button @click="toggleDarkMode()" class="w-full flex items-center justify-between px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition">
+                            <span class="flex items-center gap-2">
+                                <i x-show="!darkMode" data-lucide="moon" class="w-4 h-4"></i>
+                                <i x-show="darkMode" data-lucide="sun" class="w-4 h-4"></i>
+                                <span x-text="darkMode ? 'Mode Terang' : 'Mode Gelap'"></span>
+                            </span>
+                        </button>
+                        <div class="text-center text-[10px] text-slate-400">
+                            HafizFlow v2.0 • Kemenag API
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- MOBILE TOP BAR HEADER -->
+            <header class="md:hidden sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm">
+                <div class="px-4 h-16 flex items-center justify-between">
+                    <div class="flex items-center gap-3 cursor-pointer" @click="currentView = 'dashboard'">
+                        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-700 to-teal-500 flex items-center justify-center text-white shadow-md">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        </div>
+                        <h1 class="text-base font-bold bg-gradient-to-r from-emerald-700 to-teal-600 dark:from-emerald-400 dark:to-teal-300 bg-clip-text text-transparent">
+                            HafizFlow
+                        </h1>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button @click="sidebarOpen = !sidebarOpen" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            <i data-lucide="menu" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- MOBILE DRAWER NAVIGATION OVERLAY -->
+            <div x-show="sidebarOpen" class="fixed inset-0 z-50 md:hidden flex" style="display: none;">
+                <div @click="sidebarOpen = false" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm"></div>
+                <div class="relative w-72 bg-white dark:bg-slate-900 h-full flex flex-col justify-between p-5 shadow-2xl z-10 overflow-y-auto">
+                    <div>
+                        <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-white">
+                                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                </div>
+                                <span class="font-bold text-base">HafizFlow</span>
+                            </div>
+                            <button @click="sidebarOpen = false" class="p-1 text-slate-400 hover:text-slate-600">
+                                <i data-lucide="x" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                        <nav class="mt-4 space-y-1">
+                            <button @click="currentView = 'dashboard'; sidebarOpen = false;" class="w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">
+                                Dashboard
+                            </button>
+                            <button @click="currentView = 'quran'; sidebarOpen = false;" class="w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">
+                                Baca Al-Qur'an
+                            </button>
+                            <button @click="startSabaqSession()" class="w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-emerald-600 dark:text-emerald-400">
+                                Sabaq (Hafalan Baru)
+                            </button>
+                            <button @click="startSabqiSession()" class="w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-amber-600 dark:text-amber-400">
+                                Sabqi (Muraja'ah Dekat)
+                            </button>
+                            <button @click="startManzilSession()" class="w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-teal-600 dark:text-teal-400">
+                                Manzil (Muraja'ah Jauh)
+                            </button>
+                            <button @click="currentView = 'analytics'; sidebarOpen = false;" class="w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">
+                                Analitik 30 Juz
+                            </button>
+                            <button @click="currentView = 'bookmarks'; sidebarOpen = false;" class="w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">
+                                Bookmark
+                            </button>
+                            <button @click="currentView = 'profile'; sidebarOpen = false;" class="w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">
+                                Profil & Pengaturan
+                            </button>
+                        </nav>
+                    </div>
+                    <div class="pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <button @click="toggleDarkMode(); sidebarOpen = false;" class="w-full py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold text-center">
+                            <span x-text="darkMode ? 'Mode Terang' : 'Mode Gelap'"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MAIN CONTENT AREA -->
+            <div class="md:pl-64 flex flex-col flex-1">
+                <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
+                    
+                    <!-- DASHBOARD VIEW -->
+                    <div x-show="currentView === 'dashboard'" class="space-y-8">
+                        <div class="rounded-3xl bg-gradient-to-br from-emerald-800 via-emerald-700 to-teal-900 text-white p-6 sm:p-8 shadow-xl relative overflow-hidden">
+                            <div class="relative z-10 max-w-2xl">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <span class="px-3 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-xs font-semibold">
+                                        Sistem Muraja'ah Terjadwal (SRS)
+                                    </span>
+                                    <span class="px-3 py-1 bg-amber-400 text-slate-950 rounded-full text-xs font-bold flex items-center gap-1">
+                                        <i data-lucide="flame" class="w-3.5 h-3.5 fill-current"></i> <span x-text="streakDays + ' Hari Streak'"></span>
+                                    </span>
+                                </div>
+                                <h2 class="text-2xl sm:text-3xl font-extrabold mb-1">
+                                    Assalamu'alaikum, <span x-text="userState.user ? userState.user.name : 'Pejuang Al-Qur\'an'"></span> 👋
+                                </h2>
+                                <p x-show="userState.user && userState.user.university" class="text-xs font-semibold text-emerald-200 mb-3 flex items-center gap-1.5">
+                                    <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+                                    <span x-text="userState.user.university"></span>
+                                </p>
+                                <p class="text-emerald-100 text-sm leading-relaxed mb-6">
+                                    <template x-if="memorizedList.length === 0">
+                                        <span>Siap memulai hafalan pertama Anda hari ini? Mulai sesi Sabaq sekarang.</span>
+                                    </template>
+                                    <template x-if="memorizedList.length > 0">
+                                        <span>Target Sabaq Anda saat ini berada di <strong class="text-amber-300" x-text="'Surah ke-' + memorizationPos.surahNo + ' Ayat ' + memorizationPos.ayahNo"></strong>.</span>
+                                    </template>
+                                </p>
+                                <div class="flex flex-wrap gap-3">
+                                    <button @click="startSabaqSession()" class="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-sm transition shadow-lg shadow-amber-500/20 flex items-center gap-2">
+                                        <i data-lucide="play" class="w-4 h-4 fill-current"></i> Mulai Sabaq
+                                    </button>
+                                    <button @click="currentView = 'quran'" class="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-semibold rounded-xl text-sm transition flex items-center gap-2">
+                                        <i data-lucide="book-open" class="w-4 h-4"></i> Baca Al-Qur'an
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dashboard Stats Grid -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Hafalan</span>
+                                    <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                                        <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                                    </div>
+                                </div>
+                                <p class="text-2xl font-extrabold text-slate-900 dark:text-slate-100" x-text="memorizedList.length + ' Ayat'"></p>
+                                <p class="text-xs text-slate-500 mt-1">Terdaftar dalam SRS</p>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Aktivitas Streak</span>
+                                    <div class="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                                        <i data-lucide="flame" class="w-4 h-4"></i>
+                                    </div>
+                                </div>
+                                <p class="text-2xl font-extrabold text-slate-900 dark:text-slate-100" x-text="streakDays + ' Hari'"></p>
+                                <p class="text-xs text-slate-500 mt-1">Istiqamah Harian</p>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Harian</span>
+                                    <div class="w-8 h-8 rounded-lg bg-teal-100 dark:bg-teal-950 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+                                        <i data-lucide="target" class="w-4 h-4"></i>
+                                    </div>
+                                </div>
+                                <p class="text-2xl font-extrabold text-slate-900 dark:text-slate-100" x-text="dailyTarget + ' Ayat / Hari'"></p>
+                                <p class="text-xs text-slate-500 mt-1">Metode Sabaq</p>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Qari Utama</span>
+                                    <div class="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                                        <i data-lucide="volume-2" class="w-4 h-4"></i>
+                                    </div>
+                                </div>
+                                <p class="text-sm font-extrabold text-slate-900 dark:text-slate-100 truncate" x-text="qariList.find(q => q.id === selectedQariId)?.name"></p>
+                                <p class="text-xs text-slate-500 mt-1">Audio Murattal</p>
+                            </div>
+                        </div>
+
+                        <!-- 3 Pilar Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm hover:border-emerald-500 transition">
+                                <div class="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-4">
+                                    <i data-lucide="plus-circle" class="w-6 h-6"></i>
+                                </div>
+                                <h3 class="font-bold text-lg mb-1">Sabaq (Hafalan Baru)</h3>
+                                <p class="text-slate-500 dark:text-slate-400 text-xs mb-4 leading-relaxed">
+                                    Tambah hafalan baru dengan pengulangan Wahdah dan evaluasi SRS.
+                                </p>
+                                <button @click="startSabaqSession()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-sm transition flex items-center justify-center gap-2">
+                                    <span>Lanjut Sabaq</span> <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm hover:border-emerald-500 transition">
+                                <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-4">
+                                    <i data-lucide="rotate-ccw" class="w-6 h-6"></i>
+                                </div>
+                                <h3 class="font-bold text-lg mb-1">Sabqi (Muraja'ah Dekat)</h3>
+                                <p class="text-slate-500 dark:text-slate-400 text-xs mb-4 leading-relaxed">
+                                    Mengulang hafalan yang baru ditambahkan dalam 1-3 hari terakhir.
+                                </p>
+                                <button @click="startSabqiSession()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold rounded-xl text-sm transition flex items-center justify-center gap-2">
+                                    <span>Mulai Sabqi</span> <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm hover:border-emerald-500 transition">
+                                <div class="w-12 h-12 rounded-xl bg-teal-100 dark:bg-teal-950 text-teal-600 dark:text-teal-400 flex items-center justify-center mb-4">
+                                    <i data-lucide="calendar" class="w-6 h-6"></i>
+                                </div>
+                                <h3 class="font-bold text-lg mb-1">Manzil (Muraja'ah Jauh)</h3>
+                                <p class="text-slate-500 dark:text-slate-400 text-xs mb-4 leading-relaxed">
+                                    Rotasi pengulangan hafalan lama jangka panjang secara konsisten.
+                                </p>
+                                <button @click="startManzilSession()" class="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-xl text-sm transition flex items-center justify-center gap-2">
+                                    <span>Mulai Manzil</span> <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QURAN READER VIEW -->
+                    <div x-show="currentView === 'quran'">
+                        <div class="mb-6 flex flex-col sm:flex-row gap-4 justify-between items-center">
+                            <div class="relative w-full sm:w-80">
+                                <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                <input type="text" x-model="searchQuery" placeholder="Cari nama surah atau nomor..." class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm outline-none">
+                            </div>
+                            <div class="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+                                <button @click="filterType = 'all'" :class="filterType === 'all' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'" class="px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition">
+                                    Semua
+                                </button>
+                                <button @click="filterType = 'Mekah'" :class="filterType === 'Mekah' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'" class="px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition">
+                                    Makkiyah
+                                </button>
+                                <button @click="filterType = 'Madinah'" :class="filterType === 'Madinah' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'" class="px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition">
+                                    Madaniyah
+                                </button>
+                            </div>
+                        </div>
+
+                        <div x-show="loadingSurahs" class="text-center py-12">
+                            <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-emerald-500 border-t-transparent"></div>
+                            <p class="mt-2 text-xs text-slate-500">Memuat data Al-Qur'an...</p>
+                        </div>
+
+                        <div x-show="!loadingSurahs" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <template x-for="surah in filteredSurahs" :key="surah.nomor">
+                                <div @click="openSurah(surah.nomor)" class="group bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl p-4 transition duration-200 shadow-sm cursor-pointer flex items-center justify-between">
+                                    <div class="flex items-center gap-3.5">
+                                        <div class="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 font-bold flex items-center justify-center text-sm border border-emerald-200/50 dark:border-emerald-800/50 group-hover:bg-emerald-600 group-hover:text-white transition">
+                                            <span x-text="surah.nomor"></span>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-bold text-slate-900 dark:text-slate-100 text-base group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition" x-text="surah.namaLatin"></h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                                                <span x-text="surah.arti"></span>
+                                                <span>•</span>
+                                                <span x-text="surah.jumlahAyat + ' Ayat'"></span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="font-arabic text-xl font-bold text-emerald-700 dark:text-emerald-400 block" x-text="surah.nama"></span>
+                                        <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider" x-text="surah.tempatTurun"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- SURAH DETAIL VIEW -->
+                    <div x-show="currentView === 'surahDetail'">
+                        <div class="mb-6 flex items-center justify-between">
+                            <button @click="currentView = 'quran'" class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                                <span>Daftar Surah</span>
+                            </button>
+                            <div class="flex items-center gap-2" x-show="currentSurah">
+                                <button @click="openSurah(currentSurah.nomor - 1)" :disabled="currentSurah && currentSurah.nomor <= 1" class="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl disabled:opacity-40 transition">
+                                    <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                                </button>
+                                <span class="text-xs font-semibold text-slate-500" x-text="currentSurah ? currentSurah.nomor + ' / 114' : ''"></span>
+                                <button @click="openSurah(currentSurah.nomor + 1)" :disabled="currentSurah && currentSurah.nomor >= 114" class="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl disabled:opacity-40 transition">
+                                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div x-show="loadingDetail" class="text-center py-12">
+                            <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-emerald-500 border-t-transparent"></div>
+                            <p class="mt-2 text-xs text-slate-500">Memuat isi surah...</p>
+                        </div>
+
+                        <template x-if="!loadingDetail && currentSurah">
+                            <div>
+                                <div class="mb-8 rounded-3xl bg-emerald-900 text-white p-6 sm:p-8 text-center relative overflow-hidden shadow-lg">
+                                    <div class="relative z-10 max-w-xl mx-auto">
+                                        <span class="text-xs uppercase tracking-widest text-emerald-300 font-semibold" x-text="currentSurah.tempatTurun + ' • ' + currentSurah.jumlahAyat + ' AYAT'"></span>
+                                        <h2 class="text-3xl sm:text-4xl font-extrabold my-2" x-text="currentSurah.namaLatin"></h2>
+                                        <p class="font-arabic text-3xl my-2 text-emerald-200" x-text="currentSurah.nama"></p>
+                                        <p class="text-emerald-100 text-sm italic" x-text="'Artinya: &quot;' + currentSurah.arti + '&quot;'"></p>
+                                        <div class="mt-6 flex justify-center gap-3">
+                                            <button @click="playFullSurahAudio(currentSurah)" class="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-sm transition shadow-md">
+                                                <i data-lucide="play-circle" class="w-5 h-5"></i>
+                                                <span>Putar Audio Surah</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div x-show="currentSurah.nomor !== 9 && currentSurah.nomor !== 1" class="text-center py-6 mb-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                                    <p class="font-arabic text-2xl sm:text-3xl text-emerald-700 dark:text-emerald-400">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>
+                                </div>
+
+                                <div class="space-y-6">
+                                    <template x-for="ayat in currentSurah.ayat" :key="ayat.nomorAyat">
+                                        <div :id="'ayat-' + ayat.nomorAyat" class="bg-white dark:bg-slate-900 rounded-2xl p-5 sm:p-7 border border-slate-200 dark:border-slate-800 shadow-sm transition hover:border-emerald-500/50">
+                                            <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-5">
+                                                <span class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold text-xs flex items-center justify-center border border-emerald-200 dark:border-emerald-800" x-text="currentSurah.nomor + ':' + ayat.nomorAyat"></span>
+                                                <div class="flex items-center gap-2">
+                                                    <button @click="playAyahAudio(ayat, currentSurah)" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-emerald-600 transition" title="Putar Audio">
+                                                        <i data-lucide="volume-2" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button @click="copyAyahText(ayat, currentSurah)" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-emerald-600 transition" title="Salin">
+                                                        <i data-lucide="copy" class="w-4 h-4"></i>
+                                                    </button>
+                                                    <button @click="toggleBookmark(currentSurah, ayat)" :class="isBookmarked(currentSurah.nomor, ayat.nomorAyat) ? 'text-amber-500' : 'text-slate-400 hover:text-amber-500'" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                                        <i data-lucide="bookmark" class="w-4 h-4" :class="isBookmarked(currentSurah.nomor, ayat.nomorAyat) ? 'fill-amber-500' : ''"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="text-right mb-6" dir="rtl">
+                                                <p class="font-arabic text-slate-900 dark:text-slate-50 leading-loose" :style="'font-size: ' + settings.arabicFontSize + 'px;'" x-text="ayat.teksArab"></p>
+                                            </div>
+                                            <div x-show="settings.showLatin" class="mb-3 text-emerald-700 dark:text-emerald-400 text-sm font-medium italic">
+                                                <p x-text="ayat.teksLatin"></p>
+                                            </div>
+                                            <div x-show="settings.showTranslation" class="text-slate-600 dark:text-slate-300 text-sm sm:text-base">
+                                                <p x-text="ayat.teksIndonesia"></p>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- SABAQ / SABQI / MANZIL WORKSPACE -->
+                    <div x-show="['sabaq', 'sabqi', 'manzil'].includes(currentView)">
+                        <div class="max-w-3xl mx-auto">
+                            <div class="flex items-center justify-between mb-6">
+                                <button @click="currentView = 'dashboard'" class="inline-flex items-center gap-2 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-semibold">
+                                    <i data-lucide="x" class="w-4 h-4"></i> Akhiri Sesi
+                                </button>
+                                <div class="flex items-center gap-2">
+                                    <select x-model="selectedQariId" class="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold outline-none">
+                                        <template x-for="qari in qariList" :key="qari.id">
+                                            <option :value="qari.id" x-text="qari.name"></option>
+                                        </template>
+                                    </select>
+                                    <button @click="isBlindMode = !isBlindMode; isRevealed = false;" :class="isBlindMode ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'" class="px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition">
+                                        <i data-lucide="eye-off" class="w-3.5 h-3.5"></i>
+                                        <span x-text="isBlindMode ? 'Blind Mode ACTIVE' : 'Blind Mode'"></span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <template x-if="sessionAyahData && sessionSurah">
+                                <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-200 dark:border-slate-800 shadow-xl space-y-8">
+                                    <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+                                        <div>
+                                            <span class="px-2.5 py-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold text-xs rounded-lg uppercase" x-text="sessionType"></span>
+                                            <h2 class="text-xl font-bold mt-2" x-text="sessionSurah.namaLatin + ' : Ayat ' + sessionAyah"></h2>
+                                        </div>
+                                        <button @click="playAyahAudio(sessionAyahData, sessionSurah)" class="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/30">
+                                            <i data-lucide="volume-2" class="w-6 h-6"></i>
+                                        </button>
+                                    </div>
+
+                                    <div x-show="sessionType === 'sabaq'" class="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/50 dark:border-emerald-800/50 rounded-2xl p-4 flex items-center justify-between">
+                                        <div>
+                                            <h4 class="text-sm font-bold text-emerald-900 dark:text-emerald-200">Metode Wahdah (Pengulangan Intensif)</h4>
+                                            <p class="text-xs text-emerald-700 dark:text-emerald-400">Target: <span x-text="wahdahRepeatCount"></span>x Pengulangan Terarah</p>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-xl font-extrabold text-emerald-700 dark:text-emerald-300" x-text="wahdahCurrentCount + ' / ' + wahdahRepeatCount"></span>
+                                            <button @click="incrementWahdah()" class="px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition">
+                                                +1 Ulang
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="text-right py-4" dir="rtl">
+                                        <p class="font-arabic text-slate-900 dark:text-slate-50 transition-all duration-300"
+                                           :class="isBlindMode && !isRevealed ? 'blur-text select-none' : ''"
+                                           :style="'font-size: ' + settings.arabicFontSize + 'px;'"
+                                           x-text="sessionAyahData.teksArab"></p>
+                                    </div>
+
+                                    <div x-show="isBlindMode && !isRevealed" class="text-center">
+                                        <button @click="isRevealed = true" class="px-6 py-2.5 bg-amber-500 text-slate-950 font-bold rounded-xl text-sm hover:bg-amber-400 transition inline-flex items-center gap-2">
+                                            <i data-lucide="eye" class="w-4 h-4"></i> Reveal Teks Hafalan
+                                        </button>
+                                    </div>
+
+                                    <div x-show="!isBlindMode || isRevealed" class="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                        <p class="text-emerald-700 dark:text-emerald-400 text-sm font-medium italic" x-text="sessionAyahData.teksLatin"></p>
+                                        <p class="text-slate-600 dark:text-slate-300 text-sm sm:text-base" x-text="sessionAyahData.teksIndonesia"></p>
+                                    </div>
+
+                                    <div class="pt-6 border-t border-slate-100 dark:border-slate-800">
+                                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 text-center">Evaluasi Kualitas Hafalan (Spaced Repetition System)</p>
+                                        <div class="grid grid-cols-3 gap-3">
+                                            <button @click="submitSrsRating('hard')" class="py-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 font-bold rounded-xl text-xs hover:bg-rose-100 transition text-center">
+                                                <span class="block">Sulit (Hard)</span>
+                                                <span class="text-[10px] font-normal opacity-80">Review Besok</span>
+                                            </button>
+                                            <button @click="submitSrsRating('medium')" class="py-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-300 font-bold rounded-xl text-xs hover:bg-amber-100 transition text-center">
+                                                <span class="block">Sedang (Medium)</span>
+                                                <span class="text-[10px] font-normal opacity-80">Review +3 Hari</span>
+                                            </button>
+                                            <button @click="submitSrsRating('easy')" class="py-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold rounded-xl text-xs hover:bg-emerald-100 transition text-center">
+                                                <span class="block">Lancar (Easy)</span>
+                                                <span class="text-[10px] font-normal opacity-80">Review +7 Hari</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- ANALYTICS VIEW -->
+                    <div x-show="currentView === 'analytics'" class="space-y-8">
+                        <div>
+                            <h2 class="text-2xl font-bold mb-1">Analitik Hafalan & Kesehatan 30 Juz</h2>
+                            <p class="text-slate-500 text-sm">Visualisasi status muraja'ah real-time berbasis ritme spaced repetition.</p>
+                        </div>
+
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm">
+                            <h3 class="font-bold text-base mb-4 flex items-center gap-2">
+                                <i data-lucide="grid" class="w-5 h-5 text-emerald-600"></i>
+                                Peta Kesehatan Hafalan 30 Juz
+                            </h3>
+                            <div class="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-10 gap-2 sm:gap-3">
+                                <template x-for="juz in 30" :key="juz">
+                                    <div class="aspect-square rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 p-2 flex flex-col items-center justify-center text-center hover:border-emerald-500 cursor-pointer transition">
+                                        <span class="text-xs font-extrabold text-slate-700 dark:text-slate-300" x-text="'Juz ' + juz"></span>
+                                        <span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 mt-1"></span>
+                                    </div>
+                                </template>
+                            </div>
+                            <div class="mt-6 flex flex-wrap gap-4 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800 pt-4">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="w-3 h-3 rounded-full bg-slate-300 dark:bg-slate-600"></span> Belum Dimulai
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="w-3 h-3 rounded-full bg-emerald-500"></span> Baik / Mutqin
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="w-3 h-3 rounded-full bg-amber-500"></span> Perlu Muraja'ah
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="w-3 h-3 rounded-full bg-rose-500"></span> Kritis / Perlu Ulang
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOOKMARKS VIEW -->
+                    <div x-show="currentView === 'bookmarks'" class="space-y-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-2xl font-bold mb-1">Ayat Ditandai (Bookmark)</h2>
+                                <p class="text-slate-500 text-sm">Daftar ayat favorit yang Anda simpan.</p>
+                            </div>
+                            <button @click="currentView = 'quran'" class="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">
+                                Ke Al-Qur'an →
+                            </button>
+                        </div>
+
+                        <div x-show="bookmarks.length === 0" class="bg-white dark:bg-slate-900 rounded-3xl p-12 text-center border border-slate-200 dark:border-slate-800">
+                            <i data-lucide="bookmark-x" class="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-3"></i>
+                            <h3 class="font-semibold text-lg">Belum Ada Ayat Ditandai</h3>
+                            <p class="text-slate-500 text-sm mt-1">Klik ikon bookmark di samping ayat saat membaca Al-Qur'an untuk menyimpannya.</p>
+                        </div>
+
+                        <div class="space-y-4" x-show="bookmarks.length > 0">
+                            <template x-for="(bm, index) in bookmarks" :key="index">
+                                <div @click="openSurah(bm.surahNo, bm.ayahNo)" class="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 flex items-center justify-between hover:border-emerald-500 cursor-pointer transition shadow-sm">
+                                    <div class="space-y-2">
+                                        <span class="px-2.5 py-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-xs font-bold rounded-md">
+                                            Surah <span x-text="bm.surahName"></span> : Ayat <span x-text="bm.ayahNo"></span>
+                                        </span>
+                                        <p class="font-arabic text-xl text-right mt-2 text-slate-800 dark:text-slate-100" x-text="bm.teksArab"></p>
+                                        <p class="text-xs text-slate-500 line-clamp-1 mt-1" x-text="bm.teksIndonesia"></p>
+                                    </div>
+                                    <button @click.stop="removeBookmark(index)" class="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition" title="Hapus Bookmark">
+                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- PROFILE & SETTINGS VIEW -->
+                    <div x-show="currentView === 'profile'" class="max-w-2xl mx-auto space-y-6">
+                        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+                            <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-6">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-16 h-16 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl font-bold shadow-lg shadow-emerald-600/30" x-text="userState.user ? userState.user.name.substring(0,2).toUpperCase() : 'HF'">
+                                    </div>
+                                    <div>
+                                        <h3 class="text-xl font-bold" x-text="userState.user ? userState.user.name : 'User'"></h3>
+                                        <p x-show="userState.user && userState.user.university" class="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+                                            <i data-lucide="graduation-cap" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"></i>
+                                            <span x-text="userState.user.university"></span>
+                                        </p>
+                                        <p class="text-[10px] text-slate-400 mt-1">Akun HafizFlow • Local Profile</p>
+                                    </div>
+                                </div>
+                                <button @click="confirmResetData()" class="px-3.5 py-2 bg-rose-50 dark:bg-rose-950/50 text-rose-600 border border-rose-200 dark:border-rose-900 rounded-xl text-xs font-bold hover:bg-rose-100 transition">
+                                    Reset Data
+                                </button>
+                            </div>
+
+                            <div class="space-y-6">
+                                <h4 class="font-bold text-sm uppercase text-slate-400 tracking-wider">Informasi Profil Pengguna</h4>
+                                <div>
+                                    <label class="block text-sm font-semibold mb-2">Nama Lengkap</label>
+                                    <input type="text" x-model="userState.user.name" @input="saveUserObject()" class="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold mb-2">Nama Universitas / Instansi</label>
+                                    <input type="text" x-model="userState.user.university" @input="saveUserObject()" placeholder="Contoh: Universitas Indonesia" class="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500">
+                                </div>
+
+                                <h4 class="font-bold text-sm uppercase text-slate-400 tracking-wider pt-4 border-t border-slate-100 dark:border-slate-800">Pengaturan Hafalan & Tampilan</h4>
+                                <div>
+                                    <label class="block text-sm font-semibold mb-2">Qari Utama Pembaca Al-Qur'an</label>
+                                    <select x-model="selectedQariId" class="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none">
+                                        <template x-for="qari in qariList" :key="qari.id">
+                                            <option :value="qari.id" x-text="qari.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold mb-2">Ukuran Teks Arab (<span x-text="settings.arabicFontSize"></span>px)</label>
+                                    <input type="range" min="20" max="44" x-model.number="settings.arabicFontSize" @change="saveSettings()" class="w-full accent-emerald-600">
+                                </div>
+                                <div class="space-y-3 pt-2">
+                                    <label class="flex items-center justify-between cursor-pointer">
+                                        <span class="text-sm font-semibold">Tampilkan Transliterasi Latin</span>
+                                        <input type="checkbox" x-model="settings.showLatin" @change="saveSettings()" class="w-4 h-4 text-emerald-600 rounded">
+                                    </label>
+                                    <label class="flex items-center justify-between cursor-pointer">
+                                        <span class="text-sm font-semibold">Tampilkan Terjemahan Indonesia</span>
+                                        <input type="checkbox" x-model="settings.showTranslation" @change="saveSettings()" class="w-4 h-4 text-emerald-600 rounded">
+                                    </label>
+                                </div>
+                                <div class="pt-4 border-t border-slate-100 dark:border-slate-800">
+                                    <label class="block text-sm font-semibold mb-2">Target Sabaq Harian (Ayat)</label>
+                                    <input type="number" min="1" max="50" x-model.number="dailyTarget" class="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold mb-2">Pengulangan Metode Wahdah (Default)</label>
+                                    <input type="number" min="1" max="50" x-model.number="wahdahRepeatCount" class="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </template>
+
+    <!-- RESET DATA CONFIRMATION MODAL -->
+    <div x-show="showResetModal" x-transition.opacity class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4" style="display: none;">
+        <div @click.outside="showResetModal = false" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full space-y-4 text-center shadow-2xl">
+            <div class="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 mx-auto flex items-center justify-center">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-bold">Reset Semua Data?</h3>
+            <p class="text-xs text-slate-500 leading-relaxed">
+                Seluruh riwayat hafalan, streak, bookmark, dan pengaturan akan dihapus dari perangkat ini.
+            </p>
+            <div class="flex items-center gap-3 pt-2">
+                <button @click="showResetModal = false" class="w-full py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-xs">Batal</button>
+                <button @click="executeResetData()" class="w-full py-2.5 bg-rose-600 text-white font-bold rounded-xl text-xs hover:bg-rose-700">Ya, Hapus Data</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GLOBAL AUDIO PLAYER BAR -->
+    <div x-show="audioState.src" x-transition:enter="transition ease-out duration-300 transform" x-transition:enter-start="translate-y-full" x-transition:enter-end="translate-y-0" class="fixed bottom-0 left-0 right-0 md:pl-64 z-40 bg-slate-900 text-white border-t border-slate-800 px-4 py-3 shadow-2xl" style="display: none;">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 overflow-hidden">
+                <div class="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
+                    <i data-lucide="music" class="w-5 h-5 text-white"></i>
+                </div>
+                <div class="truncate">
+                    <p class="text-sm font-bold truncate" x-text="audioState.title"></p>
+                    <p class="text-xs text-slate-400 truncate" x-text="audioState.subtitle"></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <button @click="toggleAudioPlay()" class="w-10 h-10 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center hover:bg-emerald-400 transition">
+                    <i :data-lucide="audioState.isPlaying ? 'pause' : 'play'" class="w-5 h-5 fill-current"></i>
+                </button>
+                <button @click="stopAudio()" class="p-2 text-slate-400 hover:text-white transition">
+                    <i data-lucide="square" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div x-show="toast.show" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-2" x-transition:enter-end="opacity-100 translate-y-0" class="fixed top-20 right-4 z-50 bg-slate-900 text-white text-xs sm:text-sm px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 border border-slate-800" style="display: none;">
+        <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+        <span x-text="toast.message"></span>
+    </div>
+</body>
+</html>
